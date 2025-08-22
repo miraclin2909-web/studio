@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
 import { LoginForm } from "@/components/login-form";
 import { BookOpenCheck } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const { user, loading } = useAuth();
@@ -32,6 +34,14 @@ export default function LoginPage() {
             <h1 className="text-3xl font-bold text-center font-headline">Teacher Attendance Tracker</h1>
         </div>
         <LoginForm />
+        <div className="mt-4 text-center">
+            <p className="text-sm text-muted-foreground">
+                Don&apos;t have an account?{' '}
+                <Button variant="link" asChild>
+                    <Link href="/register">Register here</Link>
+                </Button>
+            </p>
+        </div>
       </div>
     </main>
   );
