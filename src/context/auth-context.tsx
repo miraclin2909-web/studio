@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
-    localStorage.removeItem("attendance");
+    localStorage.removeItem("teacher_attendance_history");
     router.push("/");
   };
 

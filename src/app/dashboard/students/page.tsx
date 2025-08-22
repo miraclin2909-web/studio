@@ -6,7 +6,11 @@ import { students, type Student, type AttendanceRecord } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { User, Calendar, CheckCircle, XCircle, Clock } from "lucide-react";
+import { User, Calendar, CheckCircle, XCircle, Clock, Percent } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+
+
+const REQUIRED_STUDENT_ATTENDANCE = 85;
 
 export default function StudentsPage() {
     const { user } = useAuth();
@@ -45,6 +49,18 @@ export default function StudentsPage() {
         }
     }
 
+    const calculateAttendancePercentage = (attendance: AttendanceRecord[]) => {
+        if (attendance.length === 0) return 0;
+        const totalPossibleDays = attendance.length;
+        const presentDays = attendance.reduce((acc, record) => {
+            if (record.status === 'Present') return acc + 1;
+            if (record.status === 'Tardy') return acc + 0.5;
+            return acc;
+        }, 0);
+        return (presentDays / totalPossibleDays) * 100;
+    };
+
+
     if (!user) {
         return null;
     }
@@ -57,46 +73,70 @@ export default function StudentsPage() {
 
             {assignedStudents.length > 0 ? (
                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    {assignedStudents.map(student => (
-                        <Card key={student.id} className="shadow-lg">
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-3">
-                                    <User className="h-6 w-6 text-primary" />
-                                    <span>{student.name}</span>
-                                    <Badge variant="outline">Grade {student.grade}</Badge>
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <h3 className="font-semibold text-lg mb-2 flex items-center gap-2">
-                                    <Calendar className="h-5 w-5 text-primary" />
-                                    Attendance Records
-                                </h3>
-                                <div className="max-h-60 overflow-y-auto">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Date</TableHead>
-                                                <TableHead>Status</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {student.attendance.map((record, index) => (
-                                                <TableRow key={index}>
-                                                    <TableCell>{record.date}</TableCell>
-                                                    <TableCell>
-                                                        <div className="flex items-center gap-2">
-                                                            {getStatusIcon(record.status)}
-                                                            <Badge variant={getStatusVariant(record.status)}>{record.status}</Badge>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                    {assignedStudents.map(student => {
+                        const attendancePercentage = calculateAttendancePercentage(student.attendance);
+                        return (
+                            <Card key={student.id} className="shadow-lg">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-3">
+                                        <User className="h-6 w-6 text-primary" />
+                                        <span>{student.name}</span>
+                                        <Badge variant="outline">Grade {student.grade}</Badge>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        <div>
+                                             <h3 className="font-semibold text-lg mb-2 flex items-center gap-2">
+                                                <Percent className="h-5 w-5 text-primary" />
+                                                Attendance Rate
+                                            </h3>
+                                            <div className="p-4 bg-muted rounded-lg space-y-2">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-muted-foreground">Overall Percentage</span>
+                                                    <span className={`font-bold text-2xl ${attendancePercentage >= REQUIRED_STUDENT_ATTENDANCE ? 'text-primary' : 'text-destructive'}`}>
+                                                        {attendancePercentage.toFixed(1)}%
+                                                    </span>
+                                                </div>
+                                                <Progress value={attendancePercentage} />
+                                                <p className="text-xs text-muted-foreground text-center">Required attendance: {REQUIRED_STUDENT_ATTENDANCE}%</p>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="font-semibold text-lg mb-2 flex items-center gap-2">
+                                                <Calendar className="h-5 w-5 text-primary" />
+                                                Attendance Log
+                                            </h3>
+                                            <div className="max-h-48 overflow-y-auto border rounded-md">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Date</TableHead>
+                                                            <TableHead>Status</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {student.attendance.map((record, index) => (
+                                                            <TableRow key={index}>
+                                                                <TableCell>{record.date}</TableCell>
+                                                                <TableCell>
+                                                                    <div className="flex items-center gap-2">
+                                                                        {getStatusIcon(record.status)}
+                                                                        <Badge variant={getStatusVariant(record.status)}>{record.status}</Badge>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )
+                    })}
                  </div>
             ) : (
                 <div className="text-center text-muted-foreground py-16">

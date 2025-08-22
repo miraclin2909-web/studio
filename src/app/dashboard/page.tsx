@@ -7,37 +7,60 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ThumbsUp, ThumbsDown, Bot, AlertCircle, BarChart, Users } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Bot, AlertCircle, BarChart, Users, Percent } from "lucide-react";
 import Link from "next/link";
+import { Progress } from "@/components/ui/progress";
 
 type AttendanceStatus = "Present" | "Absent";
 type AttendanceData = {
-  [key: string]: AttendanceStatus;
+  [key: string]: AttendanceStatus[];
 };
 type AnalysisResult = {
   analysisResult: string;
   flaggedAbsences?: string;
 } | null;
 
+const REQUIRED_ATTENDANCE_PERCENTAGE = 90;
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [attendance, setAttendance] = useState<AttendanceData>({});
   const [aiAnalysis, setAiAnalysis] = useState<AnalysisResult>(null);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [teacherAttendancePercentage, setTeacherAttendancePercentage] = useState<number | null>(null);
 
   const fetchAttendance = useCallback(() => {
-    const storedAttendance = localStorage.getItem("attendance");
+    const storedAttendance = localStorage.getItem("teacher_attendance_history");
     if (storedAttendance) {
-      setAttendance(JSON.parse(storedAttendance));
+      const parsedAttendance = JSON.parse(storedAttendance);
+      setAttendance(parsedAttendance);
+      if (user && parsedAttendance[user.id]) {
+        calculateTeacherPercentage(parsedAttendance[user.id]);
+      }
     }
-  }, []);
+  }, [user]);
+
+  const calculateTeacherPercentage = (history: AttendanceStatus[]) => {
+    const totalDays = history.length;
+    if (totalDays === 0) {
+      setTeacherAttendancePercentage(null);
+      return;
+    }
+    const presentDays = history.filter(status => status === "Present").length;
+    const percentage = (presentDays / totalDays) * 100;
+    setTeacherAttendancePercentage(percentage);
+  };
 
   const handleAnalyzeAttendance = useCallback(async (currentAttendance: AttendanceData) => {
+    if(!user) return;
     setIsLoadingAi(true);
     setAiAnalysis(null);
     try {
       const attendanceString = Object.entries(currentAttendance)
-        .map(([id, status]) => `${id}:${status}`)
+        .map(([id, history]) => {
+            const latestStatus = history[history.length -1];
+            return `${id}:${latestStatus}`
+        })
         .join(",");
 
       if (attendanceString) {
@@ -49,7 +72,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingAi(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchAttendance();
@@ -57,13 +80,22 @@ export default function DashboardPage() {
 
   const handleSetAttendance = (status: AttendanceStatus) => {
     if (!user) return;
-    const updatedAttendance = { ...attendance, [user.id]: status };
+    
+    const today = new Date().toISOString().split('T')[0];
+    const userHistory = attendance[user.id] || [];
+
+    // For simplicity, we assume one entry per day.
+    // In a real app, you'd check if an entry for today already exists.
+    const updatedHistory = [...userHistory, status];
+    const updatedAttendance = { ...attendance, [user.id]: updatedHistory };
+
     setAttendance(updatedAttendance);
-    localStorage.setItem("attendance", JSON.stringify(updatedAttendance));
+    localStorage.setItem("teacher_attendance_history", JSON.stringify(updatedAttendance));
+    calculateTeacherPercentage(updatedHistory);
     handleAnalyzeAttendance(updatedAttendance);
   };
 
-  const currentStatus = user ? attendance[user.id] : undefined;
+  const currentStatus = user ? attendance[user.id]?.[attendance[user.id].length -1] : undefined;
 
   return (
     <div className="flex flex-col gap-8">
@@ -107,7 +139,6 @@ export default function DashboardPage() {
               <Button
                 size="lg"
                 onClick={() => handleSetAttendance("Present")}
-                disabled={currentStatus === "Present"}
               >
                 <ThumbsUp className="mr-2 h-5 w-5" /> Mark Present
               </Button>
@@ -115,11 +146,20 @@ export default function DashboardPage() {
                 size="lg"
                 variant="destructive"
                 onClick={() => handleSetAttendance("Absent")}
-                disabled={currentStatus === "Absent"}
               >
                 <ThumbsDown className="mr-2 h-5 w-5" /> Mark Absent
               </Button>
             </div>
+             {teacherAttendancePercentage !== null && (
+                <div className="pt-4 space-y-2">
+                    <div className="flex justify-between items-center">
+                        <h4 className="font-semibold flex items-center gap-2"><Percent className="h-5 w-5 text-primary" /> Attendance Rate</h4>
+                        <span className="font-bold text-lg text-primary">{teacherAttendancePercentage.toFixed(1)}%</span>
+                    </div>
+                    <Progress value={teacherAttendancePercentage} aria-label={`${teacherAttendancePercentage.toFixed(1)}% Attendance`} />
+                    <p className="text-sm text-muted-foreground text-center">Required attendance is {REQUIRED_ATTENDANCE_PERCENTAGE}%. Keep it up!</p>
+                </div>
+            )}
           </CardContent>
         </Card>
 
