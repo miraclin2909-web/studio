@@ -56,15 +56,14 @@ export default function DashboardPage() {
     setIsLoadingAi(true);
     setAiAnalysis(null);
     try {
-      const attendanceString = Object.entries(currentAttendance)
+      const attendanceForAnalysis = Object.entries(currentAttendance)
         .map(([id, history]) => {
             const latestStatus = history[history.length -1];
-            return `${id}:${latestStatus}`
-        })
-        .join(",");
+            return {teacherId: id, status: latestStatus};
+        });
 
-      if (attendanceString) {
-        const result = await runAnalysis(attendanceString);
+      if (attendanceForAnalysis.length > 0) {
+        const result = await runAnalysis(attendanceForAnalysis);
         setAiAnalysis(result);
       }
     } catch (error) {

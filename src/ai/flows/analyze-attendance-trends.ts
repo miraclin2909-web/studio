@@ -12,10 +12,12 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const AnalyzeAttendanceTrendsInputSchema = z.object({
-  attendanceData: z
-    .string()
+  attendanceData: z.array(z.object({
+    teacherId: z.string(),
+    status: z.string(),
+  }))
     .describe(
-      'A string containing attendance records for teachers, formatted as a comma-separated list of teacher IDs and attendance status (Present/Absent) pairs. Example: \'T01T001:Present,T02T002:Absent\'.' // Corrected description
+      'An array of objects containing teacher attendance records. Each object should have a teacherId and a status (e.g., "Present" or "Absent").'
     ),
 });
 
@@ -55,7 +57,10 @@ const analyzeAttendanceTrendsPrompt = ai.definePrompt({
 
   Analyze the following attendance data and provide a detailed analysis. Highlight any unusual absence patterns or anomalies detected.
 
-  Attendance Data: {{{attendanceData}}}
+  Attendance Data:
+  {{#each attendanceData}}
+  - Teacher ID: {{teacherId}}, Status: {{status}}
+  {{/each}}
 
   If there are any specific instances of unusual or unscheduled absences that require further investigation, list them along with the reasons for flagging them. Otherwise, indicate that there are no flagged absences.
   Be concise and professional in your analysis.

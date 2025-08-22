@@ -3,8 +3,13 @@
 import { analyzeAttendanceTrends } from "@/ai/flows/analyze-attendance-trends";
 import type { AnalyzeAttendanceTrendsOutput } from "@/ai/flows/analyze-attendance-trends";
 
+type AttendanceRecord = {
+  teacherId: string;
+  status: string;
+}
+
 export async function runAnalysis(
-  attendanceData: string
+  attendanceData: AttendanceRecord[]
 ): Promise<AnalyzeAttendanceTrendsOutput> {
   try {
     const result = await analyzeAttendanceTrends({ attendanceData });
