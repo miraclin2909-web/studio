@@ -1,27 +1,72 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/auth-context";
-import { students, type Student, type AttendanceRecord } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { User, Calendar, CheckCircle, XCircle, Clock, Percent } from "lucide-react";
+import { User, Calendar, CheckCircle, XCircle, Clock, Percent, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
+export type AttendanceRecord = {
+    date: string;
+    status: "Present" | "Absent" | "Tardy";
+};
+
+export type Student = {
+    id: string; // Firebase UID
+    customId: string;
+    name: string;
+    grade: string;
+    teacherId: string; // This is the custom ID of the teacher
+    attendance: AttendanceRecord[];
+};
 
 const REQUIRED_STUDENT_ATTENDANCE = 85;
 
 export default function StudentsPage() {
     const { user } = useAuth();
     const [assignedStudents, setAssignedStudents] = useState<Student[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (user) {
-            const filteredStudents = students.filter(student => student.teacherId === user.id);
-            setAssignedStudents(filteredStudents);
+    const fetchStudents = useCallback(async () => {
+        if (user && user.role === 'teacher') {
+            setLoading(true);
+            try {
+                const q = query(collection(db, "users"), where("role", "==", "student"), where("teacherId", "==", user.customId));
+                const querySnapshot = await getDocs(q);
+                
+                const studentsData: Student[] = [];
+                for(const userDoc of querySnapshot.docs) {
+                    const studentData = userDoc.data();
+                    
+                    const attendanceCol = collection(db, `users/${userDoc.id}/attendance`);
+                    const attendanceSnapshot = await getDocs(attendanceCol);
+                    const attendance: AttendanceRecord[] = attendanceSnapshot.docs.map(d => d.data() as AttendanceRecord).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                    studentsData.push({
+                        id: userDoc.id,
+                        customId: studentData.customId,
+                        name: studentData.name,
+                        grade: studentData.grade,
+                        teacherId: studentData.teacherId,
+                        attendance,
+                    });
+                };
+                setAssignedStudents(studentsData);
+            } catch (error) {
+                console.error("Error fetching students: ", error);
+            } finally {
+                setLoading(false);
+            }
         }
     }, [user]);
+
+    useEffect(() => {
+        fetchStudents();
+    }, [fetchStudents]);
 
     const getStatusIcon = (status: AttendanceRecord['status']) => {
         switch (status) {
@@ -61,6 +106,10 @@ export default function StudentsPage() {
     };
 
 
+    if (loading) {
+        return <div className="text-center">Loading students...</div>;
+    }
+
     if (!user) {
         return null;
     }
@@ -81,7 +130,7 @@ export default function StudentsPage() {
                                     <CardTitle className="flex items-center gap-3">
                                         <User className="h-6 w-6 text-primary" />
                                         <span>{student.name}</span>
-                                        <Badge variant="outline">Grade {student.grade}</Badge>
+                                        {student.grade && <Badge variant="outline">Grade {student.grade}</Badge>}
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
@@ -139,8 +188,9 @@ export default function StudentsPage() {
                     })}
                  </div>
             ) : (
-                <div className="text-center text-muted-foreground py-16">
-                    <p>You have no students assigned to you.</p>
+                <div className="text-center text-muted-foreground py-16 bg-card rounded-lg border border-dashed">
+                    <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground" />
+                    <p className="mt-4">You have no students assigned to you.</p>
                 </div>
             )}
         </div>

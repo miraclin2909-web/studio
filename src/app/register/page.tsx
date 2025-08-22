@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus } from "lucide-react";
 import Link from "next/link";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const formSchema = z.object({
   id: z.string().min(1, { message: "User ID is required." }),
@@ -35,12 +37,23 @@ const formSchema = z.object({
   role: z.enum(["teacher", "student"], {
     required_error: "You need to select a role.",
   }),
+  teacherId: z.string().optional(),
+  grade: z.string().optional(),
+}).refine(data => {
+    if (data.role === 'student') {
+        return !!data.teacherId && !!data.grade;
+    }
+    return true;
+}, {
+    message: "Teacher ID and Grade are required for students.",
+    path: ["teacherId"],
 });
 
 export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
   const { toast } = useToast();
+  const [role, setRole] = useState<'teacher' | 'student' | undefined>();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -53,7 +66,7 @@ export default function RegisterPage() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
       await register(values.id, values.name, values.role);
-      toast({
+       toast({
         title: "Registration Successful",
         description: "You can now sign in with your new account.",
       });
@@ -116,7 +129,10 @@ export default function RegisterPage() {
                         <FormLabel>I am a...</FormLabel>
                         <FormControl>
                             <RadioGroup
-                            onValueChange={field.onChange}
+                            onValueChange={(value) => {
+                                field.onChange(value);
+                                setRole(value as 'teacher' | 'student');
+                            }}
                             defaultValue={field.value}
                             className="flex flex-col space-y-1"
                             >
@@ -142,6 +158,54 @@ export default function RegisterPage() {
                         </FormItem>
                     )}
                 />
+                {role === 'student' && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="teacherId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Teacher ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., T01T001" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                     <FormField
+                        control={form.control}
+                        name="grade"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Grade</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a grade" />
+                                </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    <SelectItem value="1">1</SelectItem>
+                                    <SelectItem value="2">2</SelectItem>
+                                    <SelectItem value="3">3</SelectItem>
+                                    <SelectItem value="4">4</SelectItem>
+                                    <SelectItem value="5">5</SelectItem>
+                                    <SelectItem value="6">6</SelectItem>
+                                    <SelectItem value="7">7</SelectItem>
+                                    <SelectItem value="8">8</SelectItem>
+                                    <SelectItem value="9">9</SelectItem>
+                                    <SelectItem value="10">10</SelectItem>
+                                    <SelectItem value="11">11</SelectItem>
+                                    <SelectItem value="12">12</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                  </>
+                )}
             </CardContent>
             <CardFooter className="flex-col gap-4">
                 <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>

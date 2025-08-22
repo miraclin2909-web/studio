@@ -10,10 +10,17 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ThumbsUp, ThumbsDown, Bot, AlertCircle, BarChart, Users, Percent } from "lucide-react";
 import Link from "next/link";
 import { Progress } from "@/components/ui/progress";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc, collection, getDocs, query, where } from "firebase/firestore";
+
 
 type AttendanceStatus = "Present" | "Absent";
+type AttendanceRecord = {
+    date: string;
+    status: AttendanceStatus;
+}
 type AttendanceData = {
-  [key: string]: AttendanceStatus[];
+  [key: string]: AttendanceRecord[];
 };
 type AnalysisResult = {
   analysisResult: string;
@@ -29,24 +36,44 @@ export default function DashboardPage() {
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const [teacherAttendancePercentage, setTeacherAttendancePercentage] = useState<number | null>(null);
 
-  const fetchAttendance = useCallback(() => {
-    const storedAttendance = localStorage.getItem("teacher_attendance_history");
-    if (storedAttendance) {
-      const parsedAttendance = JSON.parse(storedAttendance);
-      setAttendance(parsedAttendance);
-      if (user && parsedAttendance[user.id]) {
-        calculateTeacherPercentage(parsedAttendance[user.id]);
-      }
+  const fetchAttendance = useCallback(async () => {
+    if(!user) return;
+    const attendanceCol = collection(db, `users/${user.id}/attendance`);
+    const attendanceSnapshot = await getDocs(attendanceCol);
+    const history: AttendanceRecord[] = attendanceSnapshot.docs.map(d => d.data() as AttendanceRecord);
+    history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const teacherHistory = { [user.id]: history };
+    setAttendance(teacherHistory);
+    calculateTeacherPercentage(history);
+
+    // Also fetch other teachers' latest status for analysis
+    const allTeachersQuery = query(collection(db, 'users'), where('role', '==', 'teacher'));
+    const allTeachersSnapshot = await getDocs(allTeachersQuery);
+    
+    let fullAttendanceData: AttendanceData = { [user.id]: history };
+
+    for(const teacherDoc of allTeachersSnapshot.docs) {
+        if (teacherDoc.id === user.id) continue;
+        const teacherData = teacherDoc.data();
+        const customId = teacherData.customId;
+        const otherAttendanceCol = collection(db, `users/${teacherDoc.id}/attendance`);
+        const otherAttendanceSnapshot = await getDocs(otherAttendanceCol);
+        const otherHistory: AttendanceRecord[] = otherAttendanceSnapshot.docs.map(d => d.data() as AttendanceRecord);
+        otherHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        fullAttendanceData[customId] = otherHistory;
     }
+     handleAnalyzeAttendance(fullAttendanceData);
+
   }, [user]);
 
-  const calculateTeacherPercentage = (history: AttendanceStatus[]) => {
+  const calculateTeacherPercentage = (history: AttendanceRecord[]) => {
     const totalDays = history.length;
     if (totalDays === 0) {
       setTeacherAttendancePercentage(null);
       return;
     }
-    const presentDays = history.filter(status => status === "Present").length;
+    const presentDays = history.filter(status => status.status === "Present").length;
     const percentage = (presentDays / totalDays) * 100;
     setTeacherAttendancePercentage(percentage);
   };
@@ -58,11 +85,13 @@ export default function DashboardPage() {
     try {
       const attendanceForAnalysis = Object.entries(currentAttendance)
         .map(([id, history]) => {
+            if(history.length === 0) return null;
             const latestStatus = history[history.length -1];
-            return {teacherId: id, status: latestStatus};
-        });
+            return {teacherId: id, status: latestStatus.status};
+        }).filter(Boolean);
 
       if (attendanceForAnalysis.length > 0) {
+        // @ts-ignore
         const result = await runAnalysis(attendanceForAnalysis);
         setAiAnalysis(result);
       }
@@ -77,24 +106,23 @@ export default function DashboardPage() {
     fetchAttendance();
   }, [fetchAttendance]);
 
-  const handleSetAttendance = (status: AttendanceStatus) => {
+  const handleSetAttendance = async (status: AttendanceStatus) => {
     if (!user) return;
     
     const today = new Date().toISOString().split('T')[0];
-    const userHistory = attendance[user.id] || [];
+    const newRecord: AttendanceRecord = { date: today, status };
 
-    // For simplicity, we assume one entry per day.
-    // In a real app, you'd check if an entry for today already exists.
-    const updatedHistory = [...userHistory, status];
-    const updatedAttendance = { ...attendance, [user.id]: updatedHistory };
+    // Update DB
+    await setDoc(doc(db, `users/${user.id}/attendance`, today), newRecord);
 
-    setAttendance(updatedAttendance);
-    localStorage.setItem("teacher_attendance_history", JSON.stringify(updatedAttendance));
-    calculateTeacherPercentage(updatedHistory);
-    handleAnalyzeAttendance(updatedAttendance);
+    // Update state
+    fetchAttendance();
   };
 
-  const currentStatus = user ? attendance[user.id]?.[attendance[user.id].length -1] : undefined;
+  const userHistory = user ? attendance[user.id] || [] : [];
+  const todayEntry = userHistory.find(r => r.date === new Date().toISOString().split('T')[0]);
+  const currentStatus = todayEntry?.status;
+
 
   return (
     <div className="flex flex-col gap-8">
@@ -121,7 +149,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center p-6 bg-muted rounded-lg">
-              <p className="text-lg text-muted-foreground">Current Status:</p>
+              <p className="text-lg text-muted-foreground">Today&apos;s Status:</p>
               <p
                 className={`text-4xl font-bold ${
                   currentStatus === "Present"
@@ -138,6 +166,7 @@ export default function DashboardPage() {
               <Button
                 size="lg"
                 onClick={() => handleSetAttendance("Present")}
+                disabled={currentStatus === "Present"}
               >
                 <ThumbsUp className="mr-2 h-5 w-5" /> Mark Present
               </Button>
@@ -145,6 +174,7 @@ export default function DashboardPage() {
                 size="lg"
                 variant="destructive"
                 onClick={() => handleSetAttendance("Absent")}
+                disabled={currentStatus === "Absent"}
               >
                 <ThumbsDown className="mr-2 h-5 w-5" /> Mark Absent
               </Button>

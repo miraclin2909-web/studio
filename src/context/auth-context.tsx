@@ -2,11 +2,23 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+} from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+
 
 type User = {
-  id: string;
+  id: string; // This will be the Firebase UID
   name: string;
   role: 'teacher' | 'student';
+  customId: string; // This is the original ID like T01T001
 };
 
 interface AuthContextType {
@@ -19,69 +31,85 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to create an email from ID
+const createEmailFromId = (id: string) => `${id}@teacher-attendance-track-3o694.web.app`;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const getStoredUsers = useCallback(() => {
-    try {
-      const storedUsers = localStorage.getItem("users");
-      if (storedUsers) {
-        return JSON.parse(storedUsers);
-      }
-    } catch (error) {
-      console.error("Failed to parse users from localStorage", error);
-    }
-    return [];
-  }, []);
-
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("user");
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        if (userDoc.exists()) {
+          setUser({ id: firebaseUser.uid, ...userDoc.data() } as User);
+        } else {
+          // Handle case where user exists in Auth but not Firestore
+          setUser(null);
+        }
+      } else {
+        setUser(null);
       }
-    } catch (error) {
-      console.error("Failed to parse user from localStorage", error);
-      localStorage.removeItem("user");
-    } finally {
       setLoading(false);
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (id: string, name: string) => {
-    const storedUsers = getStoredUsers();
-    const foundUser = storedUsers.find(
-      (u: User) => u.id.toLowerCase() === id.toLowerCase() && u.name.toLowerCase() === name.toLowerCase()
-    );
+    // In Firebase, password cannot be empty. We'll use the name as the password.
+    // This is not secure for a real app, but works for this demo.
+    const email = createEmailFromId(id);
+    const password = name; 
 
-    if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem("user", JSON.stringify(foundUser));
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const firebaseUser = userCredential.user;
+
+    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+    if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if(userData.name.toLowerCase() === name.toLowerCase()) {
+            setUser({ id: firebaseUser.uid, ...userData } as User);
+        } else {
+            await signOut(auth);
+            throw new Error("Invalid Name. Please try again.");
+        }
     } else {
-      throw new Error("Invalid ID or Name. Please try again or register.");
+      await signOut(auth);
+      throw new Error("User data not found in database.");
     }
   };
   
   const register = async (id: string, name: string, role: 'teacher' | 'student') => {
-    const storedUsers = getStoredUsers();
-    const existingUser = storedUsers.find((u: User) => u.id.toLowerCase() === id.toLowerCase());
-
-    if(existingUser) {
+    // Check if a user with that custom ID already exists in Firestore
+    const userDocSnap = await getDoc(doc(db, "users_by_custom_id", id.toLowerCase()));
+    if (userDocSnap.exists()) {
         throw new Error("User with this ID already exists.");
     }
 
-    const newUser: User = { id, name, role };
-    const updatedUsers = [...storedUsers, newUser];
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
+    const email = createEmailFromId(id);
+    const password = name; // Using name as password
+
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const firebaseUser = userCredential.user;
+
+    const newUser: Omit<User, 'id'> = { customId: id, name, role };
+    
+    // Store user details in Firestore, keyed by Firebase UID
+    await setDoc(doc(db, "users", firebaseUser.uid), newUser);
+    // Store a mapping from custom ID to Firebase UID for lookup
+    await setDoc(doc(db, "users_by_custom_id", id.toLowerCase()), { uid: firebaseUser.uid });
+
+    // After registration, sign them out so they can log in
+    await signOut(auth);
   };
 
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth);
     setUser(null);
-    localStorage.removeItem("user");
-    localStorage.removeItem("teacher_attendance_history");
     router.push("/");
   };
 

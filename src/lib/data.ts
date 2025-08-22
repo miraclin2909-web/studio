@@ -1,3 +1,6 @@
+// This file is now deprecated as data is being fetched from Firebase.
+// It is kept for reference but is no longer used in the application.
+
 export type AttendanceRecord = {
     date: string;
     status: "Present" | "Absent" | "Tardy";
